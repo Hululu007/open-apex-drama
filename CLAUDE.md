@@ -101,6 +101,20 @@ providers/data_providers.dart ──watch(dataModeProvider)──▶  data/repos
   mpv 独立原生窗口，视频不进 Flutter widget；
 - 拉流必须带 `kCdnUserAgent`（官方客户端 UA），否则 CDN 会拒绝 / 掐断。
 
+### 投屏（DLNA）
+
+- 仅 Android / iOS 展示入口（`player_screen` 顶栏 cast 按钮）；协议为 DLNA
+  AVTransport，纯 Dart 实现，未引入第三方依赖：
+  `services/dlna/`（发现 / 描述解析 / SOAP 控制 / 本地转发 / 会话控制）。
+- **电视不能直连播放地址**：红果 CDN 只认官方 UA。投屏时由手机启动
+  `CastProxyServer`，把流地址改写成本机 `http://<局域网IP>:<端口>/cast/<token>`
+  并注入 `kCdnUserAgent`，支持 Range。手机与电视必须同一 Wi-Fi。
+- 受加密保护的流电视无法解密，投屏会改用同集未加密流；没有明文流时提示
+  不支持。投屏期间本地播放器暂停，进度以电视轮询结果落盘；停止投屏会
+  把电视侧进度接回本地播放。
+- 退出播放页、切集、切清晰度都会自动停止投屏。
+- iOS 已补 `NSLocalNetworkUsageDescription`；iOS 工程从未构建验证。
+
 ### UI 与主题
 
 - 颜色一律走 `lib/theme/app_colors.dart` 的语义令牌（`ThemeExtension`），用
