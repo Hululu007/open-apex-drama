@@ -21,13 +21,18 @@ const String _rendererType =
 
 Future<void> main(List<String> args) async {
   final String name = argValue(args, '--name') ?? 'ApexDrama Test Renderer (PC)';
+  final bool verbose = args.contains('--verbose');
   final String? host = await lanAddress();
   if (host == null) {
     stderr.writeln('未找到局域网 IPv4 地址，请先连接 Wi-Fi / 有线网络。');
     exitCode = 1;
     return;
   }
-  final _Receiver receiver = _Receiver(name: name, host: host);
+  final _Receiver receiver = _Receiver(
+    name: name,
+    host: host,
+    verbose: verbose,
+  );
   try {
     await receiver.start();
   } catch (error) {
@@ -40,10 +45,17 @@ Future<void> main(List<String> args) async {
 }
 
 class _Receiver {
-  _Receiver({required this.name, required this.host});
+  _Receiver({
+    required this.name,
+    required this.host,
+    required this.verbose,
+  });
 
   final String name;
   final String host;
+
+  /// 打印所有 SSDP 报文（含路由器 NOTIFY），默认只打印搜索请求。
+  final bool verbose;
 
   HttpServer? _http;
   RawDatagramSocket? _ssdp;
@@ -65,10 +77,26 @@ class _Receiver {
       reuseAddress: true,
     );
     _ssdp = ssdp;
-    try {
-      ssdp.joinMulticast(InternetAddress('239.255.255.250'));
-    } catch (_) {
-      // 部分系统不允许加入组播；绑定 1900 通常仍能收到 M-SEARCH。
+    // 多网卡（VMware / VirtualBox / 有线 + 无线）时，不指定网卡只会加入
+    // 默认组播接口，手机从 Wi-Fi 发出的 M-SEARCH 会收不到。逐网卡加入。
+    final List<NetworkInterface> interfaces = await NetworkInterface.list(
+      type: InternetAddressType.IPv4,
+      includeLoopback: false,
+      includeLinkLocal: false,
+    );
+    for (final NetworkInterface interface in interfaces) {
+      try {
+        ssdp.joinMulticast(
+          InternetAddress('239.255.255.250'),
+          interface,
+        );
+        final String addresses = interface.addresses
+            .map((InternetAddress item) => item.address)
+            .join(', ');
+        print('[SSDP] 组播加入 ${interface.name} ($addresses)');
+      } catch (error) {
+        print('[SSDP] 组播加入失败 ${interface.name}: $error');
+      }
     }
     ssdp.listen((RawSocketEvent event) {
       if (event == RawSocketEvent.read) {
@@ -97,7 +125,14 @@ class _Receiver {
       datagram.data,
       allowMalformed: true,
     );
-    if (!request.startsWith('M-SEARCH')) {
+    final bool search = request.startsWith('M-SEARCH');
+    if (verbose || search) {
+      final String firstLine = request.split('\r\n').first;
+      print(
+        '[SSDP] UDP <- ${datagram.address.address}:${datagram.port} $firstLine',
+      );
+    }
+    if (!search) {
       return;
     }
     final String target = dlnaHeader(request, 'st') ?? '';
@@ -125,6 +160,9 @@ class _Receiver {
         await _soap(request, _avTransport);
       case '/ctl/rc':
         await _soap(request, _rendering);
+      case '/ping':
+        request.response.write('pong');
+        await request.response.close();
       default:
         request.response.statusCode = HttpStatus.notFound;
         await request.response.close();
@@ -157,7 +195,7 @@ class _Receiver {
         _state = 'PLAYING';
         _clock.start();
         print('[控制] Play');
-        unawaited(_probe(_uri));
+        unawaited(probeStream(_uri));
         inner = '';
       case 'Pause':
         _base = _position;
@@ -209,36 +247,6 @@ class _Receiver {
         's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">'
         '<s:Body><u:${action}Response xmlns:u="$service">$inner'
         '</u:${action}Response></s:Body></s:Envelope>';
-  }
-
-  /// 真的向手机侧转发地址取 1KB，验证可达性与 Range。
-  Future<void> _probe(String url) async {
-    if (url.isEmpty) {
-      return;
-    }
-    final HttpClient client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 6);
-    try {
-      final HttpClientRequest request = await client.getUrl(Uri.parse(url));
-      request.headers.set(HttpHeaders.rangeHeader, 'bytes=0-1023');
-      final HttpClientResponse response = await request.close();
-      final int bytes = await response.fold<int>(
-        0,
-        (int total, List<int> chunk) => total + chunk.length,
-      );
-      final String range = response.headers.value('content-range') ?? '-';
-      print(
-        '[拉流验证] ${response.statusCode} '
-        '${response.headers.contentType} ${bytes}B range=$range',
-      );
-      if (response.statusCode != 200 && response.statusCode != 206) {
-        print('[拉流验证] 状态异常，请检查手机端转发 / CDN');
-      }
-    } catch (error) {
-      print('[拉流验证] 失败：$error');
-    } finally {
-      client.close(force: true);
-    }
   }
 
   String _description() {

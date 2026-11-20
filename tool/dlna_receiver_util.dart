@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print
 import 'dart:io';
 
 /// 读取命令行参数 `--name value`。
@@ -61,6 +62,36 @@ Duration? parseDlnaTime(String value) {
     seconds = seconds * 60 + part;
   }
   return Duration(seconds: seconds);
+}
+
+/// 真的向手机侧转发地址取 1KB，验证可达性与 Range。
+Future<void> probeStream(String url) async {
+  if (url.isEmpty) {
+    return;
+  }
+  final HttpClient client = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 6);
+  try {
+    final HttpClientRequest request = await client.getUrl(Uri.parse(url));
+    request.headers.set(HttpHeaders.rangeHeader, 'bytes=0-1023');
+    final HttpClientResponse response = await request.close();
+    final int bytes = await response.fold<int>(
+      0,
+      (int total, List<int> chunk) => total + chunk.length,
+    );
+    final String range = response.headers.value('content-range') ?? '-';
+    print(
+      '[拉流验证] ${response.statusCode} '
+      '${response.headers.contentType} ${bytes}B range=$range',
+    );
+    if (response.statusCode != 200 && response.statusCode != 206) {
+      print('[拉流验证] 状态异常，请检查手机端转发 / CDN');
+    }
+  } catch (error) {
+    print('[拉流验证] 失败：$error');
+  } finally {
+    client.close(force: true);
+  }
 }
 
 /// 选一个电视 / 手机可达的局域网 IPv4，优先无线网卡。

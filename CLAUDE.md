@@ -115,7 +115,8 @@ providers/data_providers.dart ──watch(dataModeProvider)──▶  data/repos
 - 退出播放页、切集、切清晰度都会自动停止投屏。
 - 电脑联调（无电视）：`dart run tool/dlna_receiver.dart` 会以 MediaRenderer
   身份出现在手机投屏列表里，打印收到的控制命令，并在 Play 时实际拉取 1KB
-  流验证转发与 Range；Windows 防火墙需放行 `dart.exe`。
+  流验证转发与 Range；多网卡机器会逐网卡加入 SSDP 组播，`--verbose` 可打印
+  全部 SSDP 报文，`/ping` 用于手机浏览器验证连通性。
 - iOS 已补 `NSLocalNetworkUsageDescription`；iOS 工程从未构建验证。
 
 ### UI 与主题
