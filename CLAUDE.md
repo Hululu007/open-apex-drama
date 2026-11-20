@@ -113,6 +113,9 @@ providers/data_providers.dart ──watch(dataModeProvider)──▶  data/repos
   不支持。投屏期间本地播放器暂停，进度以电视轮询结果落盘；停止投屏会
   把电视侧进度接回本地播放。
 - 退出播放页、切集、切清晰度都会自动停止投屏。
+- 电脑联调（无电视）：`dart run tool/dlna_receiver.dart` 会以 MediaRenderer
+  身份出现在手机投屏列表里，打印收到的控制命令，并在 Play 时实际拉取 1KB
+  流验证转发与 Range；Windows 防火墙需放行 `dart.exe`。
 - iOS 已补 `NSLocalNetworkUsageDescription`；iOS 工程从未构建验证。
 
 ### UI 与主题
